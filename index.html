@@ -15,7 +15,24 @@ body{font-family:system-ui,sans-serif;background:#0a0c10;color:#e0d8ff;height:10
 #layout{display:flex;flex:1;overflow:hidden}
 #sidebar{width:240px;flex-shrink:0;background:#111318;border-right:1px solid #1e2030;padding:14px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
 #map{flex:1}
-.lbl{font-size:10px;color:#666;letter-spacing:.6px;text-transform:uppercase;margin-bottom:4px}
+#right-panel{width:260px;flex-shrink:0;background:#111318;border-left:1px solid #1e2030;display:flex;flex-direction:column;transition:width .2s ease;overflow:hidden}
+#right-panel.collapsed{width:28px}
+#rpanel-toggle{background:none;border:none;color:#666;cursor:pointer;font-size:16px;padding:10px 6px;width:28px;flex-shrink:0;align-self:flex-end;line-height:1}
+#rpanel-toggle:hover{color:#c49dff}
+#rpanel-inner{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:232px}
+#tabs{display:flex;border-bottom:1px solid #1e2030;flex-shrink:0}
+.tab{flex:1;background:none;border:none;color:#666;padding:8px 4px;font-size:11px;cursor:pointer;border-bottom:2px solid transparent}
+.tab.active{color:#c49dff;border-bottom-color:#c49dff}
+.tab:hover:not(.active){color:#aaa}
+#tab-centrality,#tab-size{flex:1;overflow-y:auto;padding:4px 0}
+.list-item{display:flex;align-items:baseline;gap:6px;padding:4px 10px;cursor:pointer;border-bottom:1px solid #0f1118;font-size:11px}
+.list-item:hover{background:#1a1c24}
+.list-item.selected{background:#1e1530}
+.list-rank{color:#555;font-variant-numeric:tabular-nums;min-width:24px;text-align:right;flex-shrink:0}
+.list-iata{color:#c49dff;font-weight:600;min-width:32px;flex-shrink:0}
+.list-name{color:#888;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.list-val{color:#666;flex-shrink:0;font-size:10px}
+.lbl{font-size:10px;color:#666;letter-spacing:.6px;text-transform:uppercase;margin-bottom:4px;display:flex;align-items:center;gap:4px}
 #k-num{font-size:20px;font-weight:500;color:#c49dff;text-align:center;margin:3px 0}
 #k-desc{font-size:11px;color:#555;text-align:center;line-height:1.4;min-height:28px}
 #k-status{font-size:10px;color:#444;text-align:center;min-height:14px}
@@ -28,8 +45,12 @@ input[type=range]{width:100%;accent-color:#9769BB;cursor:pointer}
 .sr{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #1a1c22}
 .sv{color:#ccc;font-weight:500}
 .sv.hi{color:#c49dff}
-.kr{display:flex;justify-content:space-between;padding:2px 0;font-size:10px;color:#555;border-bottom:1px solid #111}
-.kr.ac{color:#c49dff;font-weight:500}
+.help-icon{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;background:#2a2a3a;border-radius:50%;font-size:9px;color:#888;cursor:help;border:1px solid #3a3a4a;flex-shrink:0}
+.help-icon:hover{color:#c49dff;border-color:#c49dff}
+.k-tooltip-wrap{position:relative;display:inline-flex;align-items:center}
+#k-tooltip{display:none;position:absolute;left:0;top:20px;width:220px;background:#1a1c2a;border:1px solid #3a3a5a;border-radius:6px;padding:10px;font-size:11px;color:#aaa;line-height:1.6;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.6)}
+#k-tooltip b{color:#c49dff}
+.k-tooltip-wrap:hover #k-tooltip{display:block}
 .leaflet-container{background:#0d1117}
 </style>
 </head>
@@ -41,7 +62,21 @@ input[type=range]{width:100%;accent-color:#9769BB;cursor:pointer}
 <div id="layout">
   <div id="sidebar">
     <div>
-      <div class="lbl">Distance decay (k)</div>
+      <div class="lbl">
+        Distance decay
+        <span class="k-tooltip-wrap">
+          <span class="help-icon">?</span>
+          <div id="k-tooltip">
+            <b>What is k?</b>
+            k is the distance decay exponent. It controls how strongly distance suppresses passenger demand between two airports.<br><br>
+            At <b>k = 0</b>, distance has no effect — centrality is determined almost entirely by airport size. Global mega-hubs dominate.<br><br>
+            As <b>k increases</b>, nearby airports are increasingly favoured over distant ones. The ranking shifts away from globally large hubs toward airports that are geographically central within H3's own network.<br><br>
+            At <b>k = 1.0</b>, the centrality ranking is essentially independent of raw airport size — it reflects pure network geometry.<br><br>
+            Real-world aviation gravity models typically sit around k = 1.0–1.5.
+          </div>
+        </span>
+        (k)
+      </div>
       <input type="range" id="ksl" min="0" max="1.5" step="0.01" value="1.0">
       <div id="k-num">k = 1.00</div>
       <div class="k-ends"><span>global size</span><span>H3 geography</span></div>
@@ -60,7 +95,20 @@ input[type=range]{width:100%;accent-color:#9769BB;cursor:pointer}
     <div style="font-size:10px;color:#444">Dot size = centrality score at selected k</div>
     <div id="info">Click any dot to see details.</div>
   </div>
+
   <div id="map"></div>
+
+  <div id="right-panel">
+    <button id="rpanel-toggle" title="Toggle panel">&#8250;</button>
+    <div id="rpanel-inner">
+      <div id="tabs">
+        <button class="tab active" data-tab="centrality">Centrality</button>
+        <button class="tab" data-tab="size">Size</button>
+      </div>
+      <div id="tab-centrality"></div>
+      <div id="tab-size" style="display:none"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -210,18 +258,15 @@ const N=AP.length;
 
 function haversineNm(la1,lo1,la2,lo2){
   const R=3440.065,p=Math.PI/180;
-  const dLa=(la2-la1)*p, dLo=(lo2-lo1)*p;
+  const dLa=(la2-la1)*p,dLo=(lo2-lo1)*p;
   const a=Math.sin(dLa/2)**2+Math.cos(la1*p)*Math.cos(la2*p)*Math.sin(dLo/2)**2;
   return 2*R*Math.asin(Math.sqrt(a));
 }
 
 const DIST=new Float64Array(N*N);
-for(let i=0;i<N;i++){
-  for(let j=0;j<N;j++){
-    if(i===j){DIST[i*N+j]=0;continue;}
-    DIST[i*N+j]=Math.max(haversineNm(AP[i].la,AP[i].lo,AP[j].la,AP[j].lo),50);
-  }
-}
+for(let i=0;i<N;i++)
+  for(let j=0;j<N;j++)
+    DIST[i*N+j]=i===j?0:Math.max(haversineNm(AP[i].la,AP[i].lo,AP[j].la,AP[j].lo),50);
 
 const SO=AP.map(a=>Math.pow(a.t,ALPHA_O));
 const SD=AP.map(a=>Math.pow(a.t,ALPHA_D));
@@ -254,6 +299,11 @@ function getRanks(pi){
   return r;
 }
 
+function dotRadius(rank){
+  const MIN_R=2.5,MAX_R=14;
+  return MIN_R+Math.sqrt((N-rank)/(N-1))*(MAX_R-MIN_R);
+}
+
 let currentK=1.0;
 let currentPi=computePi(currentK);
 let currentRanks=getRanks(currentPi);
@@ -261,48 +311,37 @@ let selectedIdx=null;
 let circles=[];
 let debounceTimer=null;
 
-const map=L.map('map',{center:[28,80],zoom:4,zoomControl:true});
+const map=L.map('map',{center:[28,80],zoom:4});
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
-  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
   subdomains:'abcd',maxZoom:19
 }).addTo(map);
-
-function getMinPi(pi){return Math.min(...pi);}
-
-function dotRadius(cent, maxCent) {
-  const MIN_R = 1, MAX_R = 7.5;
-  return MIN_R + Math.sqrt(cent / maxCent) * (MAX_R - MIN_R);
-
-}
 
 function drawDots(pi,ranks){
   circles.forEach(c=>map.removeLayer(c));
   circles=[];
-  const minC=getMinPi(pi);
   AP.forEach((ap,idx)=>{
-    const cent=pi[idx]*100;
-    const r=dotRadius(cent,minC*100);
+    const r=dotRadius(ranks[idx]);
     const c=L.circleMarker([ap.la,ap.lo],{
-      radius:r,fillColor:ap.co,color:'rgba(255,255,255,0.4)',
-      weight:0.7,opacity:1,fillOpacity:0.88
+      radius:r,fillColor:ap.co,
+      color:'rgba(255,255,255,0.35)',weight:0.7,opacity:1,fillOpacity:0.88
     }).addTo(map);
-    c.on('click',()=>{selectedIdx=idx;showInfo(idx,pi,ranks,currentK);});
+    c.on('click',()=>{selectedIdx=idx;showInfo(idx,pi,ranks,currentK);highlightLists();});
     circles.push(c);
   });
 }
 
 function showInfo(idx,pi,ranks,k){
   const ap=AP[idx];
-  const cent=(pi[idx]*100).toFixed(3);
-  const rank=ranks[idx];
   document.getElementById('info').innerHTML=
     `<strong>${ap.i} &mdash; ${ap.n.length>34?ap.n.slice(0,34)+'&hellip;':ap.n}</strong>`+
-    `<div class="sr"><span style="color:#666">Centrality rank</span><span class="sv hi">#${rank}/129</span></div>`+
-    `<div class="sr"><span style="color:#666">Centrality score</span><span class="sv">${cent}%</span></div>`+
+    `<div class="sr"><span style="color:#666">Centrality rank</span><span class="sv hi">#${ranks[idx]}/129</span></div>`+
+    `<div class="sr"><span style="color:#666">Centrality score</span><span class="sv">${(pi[idx]*100).toFixed(3)}%</span></div>`+
     `<div class="sr"><span style="color:#666">Total pax/week</span><span class="sv">${ap.t.toLocaleString()}</span></div>`+
     `<div class="sr"><span style="color:#666">H3 weekly pax</span><span class="sv">${ap.h.toLocaleString()}</span></div>`+
     `<div class="sr"><span style="color:#666">H3 market share</span><span class="sv">${(ap.u*100).toFixed(1)}%</span></div>`+
-    `<div style="margin-top:6px;font-size:10px;color:#444;margin-bottom:2px">All stats are live at k = ${k.toFixed(2)}</div>`;
+    `<div style="margin-top:6px;font-size:10px;color:#444">Live at k = ${k.toFixed(2)}</div>`;
+  highlightLists();
 }
 
 function getDesc(k){
@@ -310,6 +349,68 @@ function getDesc(k){
   const near=kv.reduce((a,b)=>Math.abs(b-k)<Math.abs(a-k)?b:a);
   return KV_DESCS[near]||'';
 }
+
+function buildCentralityList(pi,ranks){
+  const sorted=[...Array(N).keys()].sort((a,b)=>ranks[a]-ranks[b]);
+  const el=document.getElementById('tab-centrality');
+  el.innerHTML=sorted.map(idx=>
+    `<div class="list-item" data-idx="${idx}">
+      <span class="list-rank">${ranks[idx]}</span>
+      <span class="list-iata">${AP[idx].i}</span>
+      <span class="list-name">${AP[idx].n}</span>
+      <span class="list-val">${(pi[idx]*100).toFixed(2)}%</span>
+    </div>`).join('');
+  el.querySelectorAll('.list-item').forEach(row=>{
+    row.addEventListener('click',()=>{
+      selectedIdx=parseInt(row.dataset.idx);
+      showInfo(selectedIdx,currentPi,currentRanks,currentK);
+      map.panTo([AP[selectedIdx].la,AP[selectedIdx].lo]);
+    });
+  });
+  highlightLists();
+}
+
+function buildSizeList(){
+  const sorted=[...AP.keys()].sort((a,b)=>AP[b].t-AP[a].t);
+  const el=document.getElementById('tab-size');
+  el.innerHTML=sorted.map((idx,i)=>
+    `<div class="list-item" data-idx="${idx}">
+      <span class="list-rank">${i+1}</span>
+      <span class="list-iata">${AP[idx].i}</span>
+      <span class="list-name">${AP[idx].n}</span>
+      <span class="list-val">${AP[idx].t>=1000000?(AP[idx].t/1000000).toFixed(1)+'M':(AP[idx].t/1000).toFixed(0)+'k'}</span>
+    </div>`).join('');
+  el.querySelectorAll('.list-item').forEach(row=>{
+    row.addEventListener('click',()=>{
+      selectedIdx=parseInt(row.dataset.idx);
+      showInfo(selectedIdx,currentPi,currentRanks,currentK);
+      map.panTo([AP[selectedIdx].la,AP[selectedIdx].lo]);
+    });
+  });
+}
+
+function highlightLists(){
+  document.querySelectorAll('.list-item').forEach(r=>{
+    r.classList.toggle('selected',parseInt(r.dataset.idx)===selectedIdx);
+  });
+}
+
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const t=btn.dataset.tab;
+    document.getElementById('tab-centrality').style.display=t==='centrality'?'':'none';
+    document.getElementById('tab-size').style.display=t==='size'?'':'none';
+  });
+});
+
+document.getElementById('rpanel-toggle').addEventListener('click',()=>{
+  const p=document.getElementById('right-panel');
+  const btn=document.getElementById('rpanel-toggle');
+  p.classList.toggle('collapsed');
+  btn.innerHTML=p.classList.contains('collapsed')?'&#8249;':'&#8250;';
+});
 
 const slider=document.getElementById('ksl');
 slider.addEventListener('input',()=>{
@@ -322,11 +423,14 @@ slider.addEventListener('input',()=>{
     currentPi=computePi(currentK);
     currentRanks=getRanks(currentPi);
     drawDots(currentPi,currentRanks);
+    buildCentralityList(currentPi,currentRanks);
     if(selectedIdx!==null) showInfo(selectedIdx,currentPi,currentRanks,currentK);
     document.getElementById('k-status').textContent='';
   },120);
 });
 
+buildSizeList();
+buildCentralityList(currentPi,currentRanks);
 drawDots(currentPi,currentRanks);
 </script>
 </body>

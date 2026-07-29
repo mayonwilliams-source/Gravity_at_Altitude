@@ -270,7 +270,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
 function getMinPi(pi){return Math.min(...pi);}
 
 function dotRadius(cent, maxCent) {
-  const MIN_R = 2.5, MAX_R = 14;
+  const MIN_R = 1, MAX_R = 5;
   return MIN_R + Math.sqrt(cent / maxCent) * (MAX_R - MIN_R);
 }
 

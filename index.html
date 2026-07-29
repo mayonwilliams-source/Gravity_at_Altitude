@@ -269,9 +269,10 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
 
 function getMinPi(pi){return Math.min(...pi);}
 
-function dotRadius(rank) {
+function dotRadius(cent, maxCent) {
   const MIN_R = 1, MAX_R = 7.5;
-  return MAX_R - (rank - 1) / (N - 1) * (MAX_R - MIN_R);
+  return MIN_R + Math.sqrt(cent / maxCent) * (MAX_R - MIN_R);
+
 }
 
 function drawDots(pi,ranks){

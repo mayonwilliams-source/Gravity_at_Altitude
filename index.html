@@ -383,6 +383,7 @@ function recompute(){
   currentRanks=getRanks(currentPi);
   drawDots(currentPi,currentRanks);
   buildCentralityList(currentPi,currentRanks);
+  buildSizeList(currentMode);  // ← add this
   if(selectedIdx!==null) showInfo(selectedIdx,currentPi,currentRanks,currentK);
   document.getElementById('k-status').textContent='';
 }
@@ -429,14 +430,16 @@ function buildCentralityList(pi,ranks){
   highlightLists();
 }
 
-function buildSizeList(){
-  const sorted=[...Array(N).keys()].sort((a,b)=>AP[b].tg-AP[a].tg);
+function buildSizeList(mode){
+  const key = mode==='game' ? 'tg' : 'tr';
+  const label = mode==='game' ? 'pax/wk' : 'pax/yr';
+  const sorted=[...Array(N).keys()].sort((a,b)=>AP[b][key]-AP[a][key]);
   document.getElementById('tab-size').innerHTML=sorted.map((idx,i)=>
     `<div class="list-item" data-idx="${idx}">
       <span class="list-rank">${i+1}</span>
       <span class="list-iata">${AP[idx].i}</span>
       <span class="list-name">${AP[idx].n}</span>
-      <span class="list-val">${AP[idx].tg>=1000000?(AP[idx].tg/1000000).toFixed(1)+'M':(AP[idx].tg/1000).toFixed(0)+'k'}</span>
+      <span class="list-val">${AP[idx][key]>=1000000?(AP[idx][key]/1000000).toFixed(1)+'M':(AP[idx][key]/1000).toFixed(0)+'k'} ${label}</span>
     </div>`).join('');
   document.querySelectorAll('#tab-size .list-item').forEach(row=>{
     row.addEventListener('click',()=>{
@@ -471,7 +474,7 @@ document.getElementById('rpanel-toggle').addEventListener('click',()=>{
 });
 
 // ── Init ──────────────────────────────────────────────────────────
-buildSizeList();
+buildSizeList(currentMode);
 buildCentralityList(currentPi,currentRanks);
 drawDots(currentPi,currentRanks);
 </script>

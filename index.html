@@ -52,6 +52,11 @@ input[type=range]{width:100%;accent-color:#9769BB;cursor:pointer}
 #k-tooltip b{color:#c49dff}
 .k-tooltip-wrap:hover #k-tooltip{display:block}
 .leaflet-container{background:#0d1117}
+#mode-toggle{display:flex;gap:0;border:1px solid #2a2a4a;border-radius:6px;overflow:hidden}
+.mode-btn{flex:1;background:none;border:none;padding:6px 8px;font-size:10px;color:#666;cursor:pointer;letter-spacing:.3px}
+.mode-btn.active{background:#1e1530;color:#c49dff}
+.mode-btn:hover:not(.active){color:#aaa;background:#161620}
+#mode-label{font-size:10px;color:#444;text-align:center;margin-top:4px;min-height:14px}
 </style>
 </head>
 <body>
@@ -61,6 +66,14 @@ input[type=range]{width:100%;accent-color:#9769BB;cursor:pointer}
 </div>
 <div id="layout">
   <div id="sidebar">
+    <div>
+      <div class="lbl">Size metric</div>
+      <div id="mode-toggle">
+        <button class="mode-btn active" data-mode="game">In-game</button>
+        <button class="mode-btn" data-mode="real">Real-world</button>
+      </div>
+      <div id="mode-label">C=37.75 &nbsp; &alpha;&#8320;=0.117 &nbsp; &alpha;&#8321;=0.102</div>
+    </div>
     <div>
       <div class="lbl">
         Distance decay
@@ -84,7 +97,7 @@ input[type=range]{width:100%;accent-color:#9769BB;cursor:pointer}
       <div id="k-status"></div>
     </div>
     <div>
-      <div class="lbl">Colour &mdash; weekly passengers</div>
+      <div class="lbl">Colour &mdash; in-game weekly pax</div>
       <div class="leg"><div class="ld" style="background:#5C158A"></div>&gt; 2,000,000</div>
       <div class="leg"><div class="ld" style="background:#6F319A"></div>1.5 &ndash; 2M</div>
       <div class="leg"><div class="ld" style="background:#834DAA"></div>1 &ndash; 1.5M</div>
@@ -112,172 +125,180 @@ input[type=range]{width:100%;accent-color:#9769BB;cursor:pointer}
 </div>
 
 <script>
-const C=37.746, ALPHA_O=0.1166, ALPHA_D=0.1017;
+// ── Model parameters ──────────────────────────────────────────────
+const MODELS = {
+  game: { C: 37.75,  AO: 0.1166, AD: 0.1017, label: 'In-game weekly pax',    params: 'C=37.75 &nbsp; \u03b1\u2080=0.117 &nbsp; \u03b1\u2081=0.102' },
+  real: { C: 10.07,  AO: 0.1239, AD: 0.1246, label: 'Real-world annual pax', params: 'C=10.07 &nbsp; \u03b1\u2080=0.124 &nbsp; \u03b1\u2081=0.125' }
+};
+let currentMode = 'game';
 
-const KV_DESCS={
-  0:"No distance effect — ranking reflects global airport size only.",
-  0.5:"Mild distance decay — size dominant, some regional pull.",
-  0.75:"Moderate decay — geography and size roughly equal.",
-  1.0:"Geography reshapes ranking independently of size.",
-  1.5:"Strong decay — small nearby airports dominate."
+const KV_DESCS = {
+  0:   'No distance effect — ranking reflects global airport size only.',
+  0.5: 'Mild distance decay — size dominant, some regional pull.',
+  0.75:'Moderate decay — geography and size roughly equal.',
+  1.0: 'Geography reshapes ranking independently of size.',
+  1.5: 'Strong decay — small nearby airports dominate.'
 };
 
+// ── Airport data ──────────────────────────────────────────────────
 const AP=[
-{"i":"GAU","n":"Lokpriya Gopinath Bordoloi Intl","la":26.1061,"lo":91.5859,"t":163714,"h":4584,"u":0.028,"co":"#AB85CB"},
-{"i":"DAC","n":"Hazrat Shahjalal Intl","la":23.8433,"lo":90.3978,"t":212571,"h":1488,"u":0.007,"co":"#AB85CB"},
-{"i":"CCU","n":"Netaji Subhas Chandra Bose Intl","la":22.6547,"lo":88.4467,"t":1028000,"h":2056,"u":0.002,"co":"#834DAA"},
-{"i":"IXB","n":"Bagdogra Airport","la":26.6812,"lo":88.3286,"t":171000,"h":1026,"u":0.006,"co":"#AB85CB"},
-{"i":"PBH","n":"Paro International Airport","la":27.4032,"lo":89.4246,"t":77738,"h":4742,"u":0.061,"co":"#AB85CB"},
-{"i":"IMF","n":"Bir Tikendrajit Intl","la":24.76,"lo":93.8967,"t":17506,"h":1488,"u":0.085,"co":"#BFA2DC"},
-{"i":"LXA","n":"Lhasa Gonggar Airport","la":29.2978,"lo":90.9119,"t":148471,"h":2524,"u":0.017,"co":"#AB85CB"},
-{"i":"DEL","n":"Indira Gandhi Intl","la":28.5665,"lo":77.1031,"t":1787000,"h":3574,"u":0.002,"co":"#6F319A"},
-{"i":"KTM","n":"Tribhuvan International Airport","la":27.6966,"lo":85.3591,"t":312894,"h":161766,"u":0.517,"co":"#AB85CB"},
-{"i":"CGP","n":"Shah Amanat Intl","la":22.2496,"lo":91.8133,"t":30667,"h":828,"u":0.027,"co":"#BFA2DC"},
-{"i":"ISB","n":"Islamabad Intl","la":33.5607,"lo":72.8516,"t":214000,"h":1070,"u":0.005,"co":"#AB85CB"},
-{"i":"SXR","n":"Srinagar Airport","la":33.9871,"lo":74.7742,"t":133750,"h":1070,"u":0.008,"co":"#AB85CB"},
-{"i":"IXA","n":"Maharaja Bir Bikram Airport","la":23.887,"lo":91.2404,"t":3563,"h":1892,"u":0.531,"co":"#BFA2DC"},
-{"i":"HGI","n":"Donyi Polo Airport Itanagar","la":26.97,"lo":93.6647,"t":1648,"h":1648,"u":1.0,"co":"#BFA2DC"},
-{"i":"CNX","n":"Chiang Mai Intl","la":18.7668,"lo":98.9626,"t":150889,"h":1358,"u":0.009,"co":"#AB85CB"},
-{"i":"LHE","n":"Allama Iqbal Intl","la":31.5216,"lo":74.4036,"t":173818,"h":1912,"u":0.011,"co":"#AB85CB"},
-{"i":"TAS","n":"Islam Karimov Tashkent Intl","la":41.2579,"lo":69.2812,"t":382400,"h":1912,"u":0.005,"co":"#AB85CB"},
-{"i":"IXS","n":"Silchar Airport","la":24.9129,"lo":92.9787,"t":1048,"h":1048,"u":1.0,"co":"#BFA2DC"},
-{"i":"BLR","n":"Kempegowda Intl","la":13.1979,"lo":77.7063,"t":1768000,"h":1768,"u":0.001,"co":"#6F319A"},
-{"i":"MAA","n":"Chennai Intl","la":12.99,"lo":80.1693,"t":2048000,"h":2048,"u":0.001,"co":"#5C158A"},
-{"i":"HYD","n":"Rajiv Gandhi Intl","la":17.2313,"lo":78.4299,"t":1768000,"h":1768,"u":0.001,"co":"#6F319A"},
-{"i":"ZYL","n":"Osmani Intl","la":24.9632,"lo":91.8668,"t":876,"h":876,"u":1.0,"co":"#BFA2DC"},
-{"i":"DMU","n":"Dimapur Airport","la":25.8839,"lo":93.7711,"t":1048,"h":1048,"u":1.0,"co":"#BFA2DC"},
-{"i":"LZY","n":"Nyingchi Mianling Airport","la":29.3033,"lo":94.3353,"t":19429,"h":1768,"u":0.091,"co":"#BFA2DC"},
-{"i":"SHL","n":"Shillong Airport","la":25.7036,"lo":91.9787,"t":704,"h":704,"u":1.0,"co":"#BFA2DC"},
-{"i":"IXL","n":"Kushok Bakula Rimpochee Airport","la":34.1359,"lo":77.5465,"t":77857,"h":2180,"u":0.028,"co":"#AB85CB"},
-{"i":"KHG","n":"Kashi Laining Intl","la":39.5429,"lo":76.02,"t":127467,"h":1912,"u":0.015,"co":"#AB85CB"},
-{"i":"TEZ","n":"Tezpur Airport","la":26.7091,"lo":92.7847,"t":856,"h":856,"u":1.0,"co":"#BFA2DC"},
-{"i":"JRH","n":"Jorhat Airport","la":26.7315,"lo":94.1755,"t":1048,"h":1048,"u":1.0,"co":"#BFA2DC"},
-{"i":"KMG","n":"Kunming Changshui Intl","la":25.1019,"lo":102.9292,"t":218000,"h":1090,"u":0.005,"co":"#AB85CB"},
-{"i":"AJL","n":"Lengpui Airport","la":23.8406,"lo":92.6197,"t":1488,"h":1488,"u":1.0,"co":"#BFA2DC"},
-{"i":"DED","n":"Dehradun Airport","la":30.1897,"lo":78.1803,"t":72762,"h":1528,"u":0.021,"co":"#AB85CB"},
-{"i":"RGN","n":"Yangon Intl","la":16.9073,"lo":96.1332,"t":191200,"h":1912,"u":0.01,"co":"#AB85CB"},
-{"i":"NYT","n":"Nay Pyi Taw Intl","la":19.6235,"lo":96.201,"t":41833,"h":753,"u":0.018,"co":"#BFA2DC"},
-{"i":"KBL","n":"Kabul Intl","la":34.5659,"lo":69.2123,"t":159333,"h":1912,"u":0.012,"co":"#AB85CB"},
-{"i":"PEW","n":"Bacha Khan Intl","la":33.9939,"lo":71.5146,"t":41231,"h":536,"u":0.013,"co":"#BFA2DC"},
-{"i":"ALA","n":"Almaty Intl","la":43.3521,"lo":77.0405,"t":159333,"h":1912,"u":0.012,"co":"#AB85CB"},
-{"i":"CTU","n":"Chengdu Shuangliu Intl","la":30.5785,"lo":103.947,"t":536000,"h":536,"u":0.001,"co":"#9769BB"},
-{"i":"HKG","n":"Hong Kong Intl","la":22.3089,"lo":113.915,"t":1912000,"h":1912,"u":0.001,"co":"#6F319A"},
-{"i":"DIB","n":"Dibrugarh Airport","la":27.4839,"lo":95.0169,"t":2016,"h":2016,"u":1.0,"co":"#BFA2DC"},
-{"i":"MDL","n":"Mandalay Intl","la":21.7022,"lo":95.9779,"t":16511,"h":1519,"u":0.092,"co":"#BFA2DC"},
-{"i":"CEI","n":"Chiang Rai Intl","la":19.9523,"lo":99.8829,"t":36545,"h":804,"u":0.022,"co":"#BFA2DC"},
-{"i":"CAN","n":"Guangzhou Baiyun Intl","la":23.3924,"lo":113.299,"t":1072000,"h":1072,"u":0.001,"co":"#834DAA"},
-{"i":"BBI","n":"Biju Patnaik Airport","la":20.2444,"lo":85.8178,"t":108857,"h":762,"u":0.007,"co":"#AB85CB"},
-{"i":"BOM","n":"Chhatrapati Shivaji Maharaj Intl","la":19.0887,"lo":72.8679,"t":1768000,"h":1768,"u":0.001,"co":"#6F319A"},
-{"i":"DLU","n":"Dali Fengyi Airport","la":25.6494,"lo":100.319,"t":26071,"h":730,"u":0.028,"co":"#BFA2DC"},
-{"i":"HTN","n":"Hetian Kungang Airport","la":37.0385,"lo":79.8649,"t":74444,"h":670,"u":0.009,"co":"#AB85CB"},
-{"i":"HAN","n":"Noi Bai Intl","la":21.2212,"lo":105.807,"t":315667,"h":1894,"u":0.006,"co":"#AB85CB"},
-{"i":"IXI","n":"Lilabari Airport","la":27.2955,"lo":94.0976,"t":414,"h":414,"u":1.0,"co":"#BFA2DC"},
-{"i":"DYU","n":"Dushanbe Intl","la":38.5433,"lo":68.825,"t":33561,"h":1376,"u":0.041,"co":"#BFA2DC"},
-{"i":"BKK","n":"Suvarnabhumi Airport","la":13.6811,"lo":100.747,"t":307500,"h":2460,"u":0.008,"co":"#AB85CB"},
-{"i":"CXB","n":"Cox's Bazar Airport","la":21.4522,"lo":91.9639,"t":2216,"h":780,"u":0.352,"co":"#BFA2DC"},
-{"i":"BSZ","n":"Manas Intl","la":43.0613,"lo":74.4776,"t":57939,"h":1912,"u":0.033,"co":"#AB85CB"},
-{"i":"NMA","n":"Namangan Airport","la":40.9846,"lo":71.5567,"t":15352,"h":1090,"u":0.071,"co":"#BFA2DC"},
-{"i":"VTE","n":"Wattay Intl","la":17.9883,"lo":102.563,"t":44905,"h":943,"u":0.021,"co":"#BFA2DC"},
-{"i":"OSS","n":"Osh Intl","la":40.609,"lo":72.7933,"t":10737,"h":816,"u":0.076,"co":"#BFA2DC"},
-{"i":"DIG","n":"Diqing Shangri-La Airport","la":27.7936,"lo":99.6772,"t":6718,"h":1048,"u":0.156,"co":"#BFA2DC"},
-{"i":"BWA","n":"Gautam Buddha Airport","la":27.5057,"lo":83.4163,"t":4454,"h":775,"u":0.174,"co":"#BFA2DC"},
-{"i":"LPQ","n":"Luang Prabang Intl","la":19.8973,"lo":102.161,"t":14941,"h":762,"u":0.051,"co":"#BFA2DC"},
-{"i":"AKU","n":"Akesu Hongqipo Airport","la":41.2625,"lo":80.2917,"t":45167,"h":1084,"u":0.024,"co":"#BFA2DC"},
-{"i":"URC","n":"Urumqi Diwopu Intl","la":43.9071,"lo":87.4742,"t":478000,"h":1912,"u":0.004,"co":"#AB85CB"},
-{"i":"CMB","n":"Bandaranaike Intl","la":7.1808,"lo":79.8841,"t":956000,"h":1912,"u":0.002,"co":"#9769BB"},
-{"i":"TRV","n":"Thiruvananthapuram Intl","la":8.4821,"lo":76.9201,"t":471500,"h":943,"u":0.002,"co":"#AB85CB"},
-{"i":"KTI","n":"Techo Intl","la":11.3629,"lo":104.9166,"t":136000,"h":816,"u":0.006,"co":"#AB85CB"},
-{"i":"SKD","n":"Samarkand Intl","la":39.7005,"lo":66.9838,"t":18169,"h":1072,"u":0.059,"co":"#BFA2DC"},
-{"i":"SGN","n":"Tan Son Nhat Intl","la":10.8188,"lo":106.652,"t":272500,"h":2180,"u":0.008,"co":"#AB85CB"},
-{"i":"DCY","n":"Daocheng Yading Airport","la":29.3231,"lo":100.0533,"t":4589,"h":1005,"u":0.219,"co":"#BFA2DC"},
-{"i":"KDU","n":"Skardu Intl","la":35.3355,"lo":75.536,"t":2180,"h":2180,"u":1.0,"co":"#BFA2DC"},
-{"i":"BPX","n":"Changdu Bamda Airport","la":30.5536,"lo":97.1083,"t":2773,"h":768,"u":0.277,"co":"#BFA2DC"},
-{"i":"DXB","n":"Dubai Intl","la":25.2528,"lo":55.3644,"t":685000,"h":2055,"u":0.003,"co":"#9769BB"},
-{"i":"KHI","n":"Jinnah Intl","la":24.9065,"lo":67.1608,"t":189400,"h":1894,"u":0.01,"co":"#AB85CB"},
-{"i":"SAI","n":"Siem Reap-Angkor Intl","la":13.3753,"lo":104.2208,"t":51000,"h":816,"u":0.016,"co":"#AB85CB"},
-{"i":"CJB","n":"Coimbatore Intl","la":11.03,"lo":77.0434,"t":69455,"h":1528,"u":0.022,"co":"#AB85CB"},
-{"i":"SIN","n":"Singapore Changi Airport","la":1.3502,"lo":103.994,"t":2448000,"h":2448,"u":0.001,"co":"#5C158A"},
-{"i":"RKZ","n":"Rikaze Peace Airport","la":29.3519,"lo":89.3114,"t":450,"h":450,"u":1.0,"co":"#BFA2DC"},
-{"i":"PEK","n":"Beijing Capital Intl","la":40.0801,"lo":116.585,"t":2180000,"h":2180,"u":0.001,"co":"#5C158A"},
-{"i":"MYT","n":"Myitkyina Airport","la":25.3836,"lo":97.3519,"t":508,"h":508,"u":1.0,"co":"#BFA2DC"},
-{"i":"HKT","n":"Phuket Intl","la":8.1132,"lo":98.3169,"t":203250,"h":813,"u":0.004,"co":"#AB85CB"},
-{"i":"KDH","n":"Ahmad Shah Baba Intl","la":31.5058,"lo":65.8478,"t":34000,"h":816,"u":0.024,"co":"#BFA2DC"},
-{"i":"YUS","n":"Yushu Batang Airport","la":32.8364,"lo":97.0364,"t":4037,"h":884,"u":0.219,"co":"#BFA2DC"},
-{"i":"BHK","n":"Bukhara Intl","la":39.775,"lo":64.4833,"t":20815,"h":562,"u":0.027,"co":"#BFA2DC"},
-{"i":"BEY","n":"Beirut-Rafic Hariri Intl","la":33.8209,"lo":35.4884,"t":254000,"h":762,"u":0.003,"co":"#AB85CB"},
-{"i":"DOH","n":"Hamad Intl","la":25.2731,"lo":51.6081,"t":511500,"h":2046,"u":0.004,"co":"#9769BB"},
-{"i":"KUL","n":"Kuala Lumpur Intl","la":2.7456,"lo":101.71,"t":507000,"h":2028,"u":0.004,"co":"#9769BB"},
-{"i":"NGQ","n":"Ali Kunsha Airport","la":32.1,"lo":80.0531,"t":1764,"h":1764,"u":1.0,"co":"#BFA2DC"},
-{"i":"GZG","n":"Garze Gesar Airport","la":31.6492,"lo":99.8228,"t":3014,"h":633,"u":0.210,"co":"#BFA2DC"},
-{"i":"AKY","n":"Sittwe Airport","la":20.1327,"lo":92.8726,"t":513,"h":513,"u":1.0,"co":"#BFA2DC"},
-{"i":"PHH","n":"Pokhara Intl","la":28.2002,"lo":83.9826,"t":360,"h":360,"u":1.0,"co":"#BFA2DC"},
-{"i":"PVG","n":"Shanghai Pudong Intl","la":31.1434,"lo":121.805,"t":1084000,"h":1084,"u":0.001,"co":"#834DAA"},
-{"i":"MCT","n":"Muscat Intl","la":23.5933,"lo":58.2844,"t":214400,"h":1072,"u":0.005,"co":"#AB85CB"},
-{"i":"IKU","n":"Issyk-Kul Intl","la":42.5879,"lo":76.713,"t":651,"h":651,"u":1.0,"co":"#BFA2DC"},
-{"i":"TPE","n":"Taiwan Taoyuan Intl","la":25.0777,"lo":121.233,"t":562000,"h":562,"u":0.001,"co":"#9769BB"},
-{"i":"GYD","n":"Baku Heydar Aliyev Intl","la":40.4675,"lo":50.0467,"t":254000,"h":508,"u":0.002,"co":"#AB85CB"},
-{"i":"HQL","n":"Tashkurgan Khunjerab Airport","la":37.9683,"lo":75.1933,"t":487,"h":487,"u":1.0,"co":"#BFA2DC"},
-{"i":"DAM","n":"Damascus Intl","la":33.4115,"lo":36.5156,"t":40437,"h":0,"u":0.0,"co":"#BFA2DC"},
-{"i":"TJU","n":"Kulob Airport","la":37.9881,"lo":69.805,"t":375,"h":375,"u":1.0,"co":"#BFA2DC"},
-{"i":"ICN","n":"Incheon Intl","la":37.4691,"lo":126.451,"t":637333,"h":1912,"u":0.003,"co":"#9769BB"},
-{"i":"AMM","n":"Queen Alia Intl","la":31.7226,"lo":35.9932,"t":153000,"h":1224,"u":0.008,"co":"#AB85CB"},
-{"i":"RUH","n":"King Khalid Intl","la":24.9576,"lo":46.6988,"t":356667,"h":1070,"u":0.003,"co":"#AB85CB"},
-{"i":"MLE","n":"Velana Intl","la":4.1918,"lo":73.5291,"t":314000,"h":2198,"u":0.007,"co":"#AB85CB"},
-{"i":"IST","n":"Istanbul Airport","la":41.2753,"lo":28.7519,"t":1912000,"h":1912,"u":0.001,"co":"#6F319A"},
-{"i":"MNL","n":"Ninoy Aquino Intl","la":14.5086,"lo":121.02,"t":889000,"h":889,"u":0.001,"co":"#9769BB"},
-{"i":"NQZ","n":"Nursultan Nazarbayev Intl","la":51.0222,"lo":71.4669,"t":108857,"h":762,"u":0.007,"co":"#AB85CB"},
-{"i":"IKA","n":"Tehran Imam Khomeini Intl","la":35.4161,"lo":51.1522,"t":68855,"h":0,"u":0.0,"co":"#AB85CB"},
-{"i":"ESB","n":"Ankara Esenboga Airport","la":40.1281,"lo":32.9951,"t":356667,"h":1070,"u":0.003,"co":"#AB85CB"},
-{"i":"TBS","n":"Shota Rustaveli Tbilisi Intl","la":41.6692,"lo":44.9547,"t":127000,"h":762,"u":0.006,"co":"#AB85CB"},
-{"i":"BGW","n":"Baghdad Intl","la":33.2625,"lo":44.2346,"t":83789,"h":0,"u":0.0,"co":"#AB85CB"},
-{"i":"UBN","n":"Chinggis Khaan Intl","la":47.6469,"lo":106.8197,"t":104778,"h":943,"u":0.009,"co":"#AB85CB"},
-{"i":"EDI","n":"Edinburgh Airport","la":55.95,"lo":-3.3725,"t":296000,"h":1480,"u":0.005,"co":"#AB85CB"},
-{"i":"GOQ","n":"Golmud Airport","la":36.4006,"lo":94.7861,"t":604,"h":604,"u":1.0,"co":"#BFA2DC"},
-{"i":"CGK","n":"Soekarno-Hatta Intl","la":-6.1256,"lo":106.656,"t":511500,"h":2046,"u":0.004,"co":"#9769BB"},
-{"i":"JED","n":"King Abdulaziz Intl","la":21.6796,"lo":39.1565,"t":254000,"h":508,"u":0.002,"co":"#AB85CB"},
-{"i":"LHR","n":"Heathrow Airport","la":51.4706,"lo":-0.4619,"t":1499000,"h":1499,"u":0.001,"co":"#834DAA"},
-{"i":"ABZ","n":"Aberdeen Intl","la":57.2019,"lo":-2.1978,"t":24276,"h":704,"u":0.029,"co":"#BFA2DC"},
-{"i":"FNJ","n":"Pyongyang Intl","la":39.2241,"lo":125.67,"t":9720,"h":797,"u":0.082,"co":"#BFA2DC"},
-{"i":"NRT","n":"Narita Intl","la":35.7647,"lo":140.386,"t":637333,"h":1912,"u":0.003,"co":"#9769BB"},
-{"i":"INV","n":"Inverness Airport","la":57.5425,"lo":-4.0475,"t":8482,"h":704,"u":0.083,"co":"#BFA2DC"},
-{"i":"FAE","n":"Vagar Airport","la":62.0636,"lo":-7.2772,"t":60727,"h":668,"u":0.011,"co":"#AB85CB"},
-{"i":"RVN","n":"Rovaniemi Airport","la":66.5648,"lo":25.8304,"t":15000,"h":330,"u":0.022,"co":"#BFA2DC"},
-{"i":"INN","n":"Innsbruck Airport","la":47.2602,"lo":11.344,"t":14304,"h":329,"u":0.023,"co":"#BFA2DC"},
-{"i":"NUM","n":"Neom Airport","la":27.9586,"lo":35.3209,"t":340,"h":340,"u":1.0,"co":"#BFA2DC"},
-{"i":"LYR","n":"Svalbard Airport","la":78.2461,"lo":15.4656,"t":15650,"h":313,"u":0.02,"co":"#BFA2DC"},
-{"i":"ROR","n":"Roman Tmetuchl Intl","la":7.3673,"lo":134.5442,"t":6833,"h":328,"u":0.048,"co":"#BFA2DC"},
-{"i":"JFK","n":"John F. Kennedy Intl","la":40.6398,"lo":-73.7789,"t":972000,"h":972,"u":0.001,"co":"#9769BB"},
-{"i":"JNB","n":"O. R. Tambo Intl","la":-26.1392,"lo":28.246,"t":302750,"h":1211,"u":0.004,"co":"#AB85CB"},
-{"i":"ATL","n":"Hartsfield-Jackson Atlanta Intl","la":33.6367,"lo":-84.4281,"t":1475000,"h":1475,"u":0.001,"co":"#834DAA"},
-{"i":"LAX","n":"Los Angeles Intl","la":33.9425,"lo":-118.408,"t":1742000,"h":1742,"u":0.001,"co":"#6F319A"},
-{"i":"SYD","n":"Sydney Airport","la":-33.9461,"lo":151.177,"t":496667,"h":1490,"u":0.003,"co":"#AB85CB"},
-{"i":"ELP","n":"El Paso Intl","la":31.8072,"lo":-106.378,"t":239170,"h":0,"u":0.0,"co":"#AB85CB"}
+{"i":"ATL","n":"Hartsfield-Jackson Atlanta International Airport","la":33.6367,"lo":-84.4281,"tg":1475000,"tr":106302208,"h":1475,"u":0.001,"co":"#834DAA"},
+{"i":"DXB","n":"Dubai International Airport","la":25.2528,"lo":55.3644,"tg":685000,"tr":95200000,"h":2055,"u":0.003,"co":"#9769BB"},
+{"i":"PVG","n":"Shanghai Pudong International Airport","la":31.1434,"lo":121.805,"tg":1084000,"tr":84939600,"h":1084,"u":0.001,"co":"#834DAA"},
+{"i":"LHR","n":"Heathrow Airport","la":51.4706,"lo":-0.4619,"tg":1499000,"tr":84463000,"h":1499,"u":0.001,"co":"#834DAA"},
+{"i":"IST","n":"Istanbul Airport","la":41.2753,"lo":28.7519,"tg":1912000,"tr":84457421,"h":1912,"u":0.001,"co":"#6F319A"},
+{"i":"CAN","n":"Guangzhou Baiyun International Airport","la":23.3924,"lo":113.299,"tg":1072000,"tr":83582952,"h":1072,"u":0.001,"co":"#834DAA"},
+{"i":"DEL","n":"Indira Gandhi International Airport","la":28.5665,"lo":77.1031,"tg":1787000,"tr":79259890,"h":3574,"u":0.002,"co":"#6F319A"},
+{"i":"ICN","n":"Incheon International Airport","la":37.4691,"lo":126.451,"tg":637333,"tr":74071475,"h":1912,"u":0.003,"co":"#9769BB"},
+{"i":"LAX","n":"Los Angeles International Airport","la":33.9425,"lo":-118.408,"tg":1742000,"tr":73709594,"h":1742,"u":0.001,"co":"#6F319A"},
+{"i":"PEK","n":"Beijing Capital International Airport","la":40.0801,"lo":116.585,"tg":2180000,"tr":70742712,"h":2180,"u":0.001,"co":"#5C158A"},
+{"i":"SIN","n":"Singapore Changi Airport","la":1.3502,"lo":103.994,"tg":2448000,"tr":69980000,"h":2448,"u":0.001,"co":"#5C158A"},
+{"i":"KUL","n":"Kuala Lumpur International Airport","la":2.7456,"lo":101.71,"tg":507000,"tr":63300000,"h":2028,"u":0.004,"co":"#9769BB"},
+{"i":"BKK","n":"Suvarnabhumi Airport","la":13.6811,"lo":100.747,"tg":307500,"tr":62902183,"h":2460,"u":0.008,"co":"#AB85CB"},
+{"i":"JFK","n":"John F. Kennedy International Airport","la":40.6398,"lo":-73.7789,"tg":972000,"tr":62629455,"h":972,"u":0.001,"co":"#9769BB"},
+{"i":"HKG","n":"Hong Kong International Airport","la":22.3089,"lo":113.915,"tg":1912000,"tr":60992000,"h":1912,"u":0.001,"co":"#6F319A"},
+{"i":"CGK","n":"Soekarno-Hatta International Airport","la":-6.1256,"lo":106.656,"tg":511500,"tr":56000000,"h":2046,"u":0.004,"co":"#9769BB"},
+{"i":"BOM","n":"Chhatrapati Shivaji Maharaj International Airport","la":19.0887,"lo":72.8679,"tg":1768000,"tr":55500000,"h":1768,"u":0.001,"co":"#6F319A"},
+{"i":"DOH","n":"Hamad International Airport","la":25.2731,"lo":51.6081,"tg":511500,"tr":54300000,"h":2046,"u":0.004,"co":"#9769BB"},
+{"i":"JED","n":"King Abdulaziz International Airport","la":21.6796,"lo":39.1565,"tg":254000,"tr":53400000,"h":508,"u":0.002,"co":"#AB85CB"},
+{"i":"MNL","n":"Ninoy Aquino International Airport","la":14.5086,"lo":121.02,"tg":889000,"tr":52020000,"h":889,"u":0.001,"co":"#9769BB"},
+{"i":"KMG","n":"Kunming Changshui International Airport","la":25.1019,"lo":102.9292,"tg":218000,"tr":49705725,"h":1090,"u":0.005,"co":"#AB85CB"},
+{"i":"TPE","n":"Taiwan Taoyuan International Airport","la":25.0777,"lo":121.233,"tg":562000,"tr":47795969,"h":562,"u":0.001,"co":"#9769BB"},
+{"i":"SYD","n":"Sydney Airport","la":-33.9461,"lo":151.177,"tg":496667,"tr":41367223,"h":1490,"u":0.003,"co":"#AB85CB"},
+{"i":"BLR","n":"Kempegowda International Airport","la":13.1979,"lo":77.7063,"tg":1768000,"tr":40730000,"h":1768,"u":0.001,"co":"#6F319A"},
+{"i":"SGN","n":"Tan Son Nhat International Airport","la":10.8188,"lo":106.652,"tg":272500,"tr":39859384,"h":2180,"u":0.008,"co":"#AB85CB"},
+{"i":"NRT","n":"Narita International Airport","la":35.7647,"lo":140.386,"tg":637333,"tr":39807651,"h":1912,"u":0.003,"co":"#9769BB"},
+{"i":"CTU","n":"Chengdu Shuangliu International Airport","la":30.5785,"lo":103.947,"tg":536000,"tr":33518945,"h":536,"u":0.001,"co":"#9769BB"},
+{"i":"HAN","n":"Noi Bai International Airport","la":21.2212,"lo":105.807,"tg":315667,"tr":29304631,"h":1894,"u":0.006,"co":"#AB85CB"},
+{"i":"URC","n":"Urumqi Diwopu International Airport","la":43.9071,"lo":87.4742,"tg":478000,"tr":29179737,"h":1912,"u":0.004,"co":"#AB85CB"},
+{"i":"HYD","n":"Rajiv Gandhi International Airport","la":17.2313,"lo":78.4299,"tg":1768000,"tr":29166438,"h":1768,"u":0.001,"co":"#6F319A"},
+{"i":"RUH","n":"King Khalid International Airport","la":24.9576,"lo":46.6988,"tg":356667,"tr":26500000,"h":1070,"u":0.003,"co":"#AB85CB"},
+{"i":"MAA","n":"Chennai International Airport","la":12.99,"lo":80.1693,"tg":2048000,"tr":21207262,"h":2048,"u":0.001,"co":"#5C158A"},
+{"i":"CCU","n":"Netaji Subhas Chandra Bose International Airport","la":22.6547,"lo":88.4467,"tg":1028000,"tr":19784417,"h":2056,"u":0.002,"co":"#834DAA"},
+{"i":"JNB","n":"O. R. Tambo International Airport","la":-26.1392,"lo":28.246,"tg":302750,"tr":17852569,"h":1211,"u":0.004,"co":"#AB85CB"},
+{"i":"HKT","n":"Phuket International Airport","la":8.1132,"lo":98.3169,"tg":203250,"tr":17215315,"h":813,"u":0.004,"co":"#AB85CB"},
+{"i":"EDI","n":"Edinburgh Airport","la":55.95,"lo":-3.3725,"tg":296000,"tr":15837102,"h":1480,"u":0.005,"co":"#AB85CB"},
+{"i":"MCT","n":"Muscat International Airport","la":23.5933,"lo":58.2844,"tg":214400,"tr":12938113,"h":1072,"u":0.005,"co":"#AB85CB"},
+{"i":"ESB","n":"Ankara Esenboga Airport","la":40.1281,"lo":32.9951,"tg":356667,"tr":12853024,"h":1070,"u":0.003,"co":"#AB85CB"},
+{"i":"DAC","n":"Hazrat Shahjalal International Airport","la":23.8433,"lo":90.3978,"tg":212571,"tr":12592833,"h":1488,"u":0.007,"co":"#AB85CB"},
+{"i":"ALA","n":"Almaty International Airport","la":43.3521,"lo":77.0405,"tg":159333,"tr":11426650,"h":1912,"u":0.012,"co":"#AB85CB"},
+{"i":"CNX","n":"Chiang Mai International Airport","la":18.7668,"lo":98.9626,"tg":150889,"tr":9082071,"h":1358,"u":0.009,"co":"#AB85CB"},
+{"i":"KTM","n":"Tribhuvan International Airport","la":27.6966,"lo":85.3591,"tg":312894,"tr":8991993,"h":161766,"u":0.517,"co":"#AB85CB"},
+{"i":"CMB","n":"Bandaranaike International Airport","la":7.1808,"lo":79.8841,"tg":956000,"tr":8804019,"h":1912,"u":0.002,"co":"#9769BB"},
+{"i":"TAS","n":"Islam Karimov Tashkent International Airport","la":41.2579,"lo":69.2812,"tg":382400,"tr":8716526,"h":1912,"u":0.005,"co":"#AB85CB"},
+{"i":"NQZ","n":"Nursultan Nazarbayev International Airport","la":51.0222,"lo":71.4669,"tg":108857,"tr":8300000,"h":762,"u":0.007,"co":"#AB85CB"},
+{"i":"AMM","n":"Queen Alia International Airport","la":31.7226,"lo":35.9932,"tg":153000,"tr":7837501,"h":1224,"u":0.008,"co":"#AB85CB"},
+{"i":"GYD","n":"Baku Heydar Aliyev International Airport","la":40.4675,"lo":50.0467,"tg":254000,"tr":7537000,"h":508,"u":0.002,"co":"#AB85CB"},
+{"i":"IKA","n":"Tehran Imam Khomeini International Airport","la":35.4161,"lo":51.1522,"tg":68855,"tr":7271338,"h":0,"u":0.0,"co":"#AB85CB"},
+{"i":"BEY","n":"Beirut-Rafic Hariri International Airport","la":33.8209,"lo":35.4884,"tg":254000,"tr":7127649,"h":762,"u":0.003,"co":"#AB85CB"},
+{"i":"LXA","n":"Lhasa Gonggar Airport","la":29.2978,"lo":90.9119,"tg":148471,"tr":6284823,"h":2524,"u":0.017,"co":"#AB85CB"},
+{"i":"ISB","n":"Islamabad International Airport","la":33.5607,"lo":72.8516,"tg":214000,"tr":6024221,"h":1070,"u":0.005,"co":"#AB85CB"},
+{"i":"GAU","n":"Lokpriya Gopinath Bordoloi International Airport","la":26.1061,"lo":91.5859,"tg":163714,"tr":5957609,"h":4584,"u":0.028,"co":"#AB85CB"},
+{"i":"KHG","n":"Kashi Laining International Airport","la":39.5429,"lo":76.02,"tg":127467,"tr":5233499,"h":1912,"u":0.015,"co":"#AB85CB"},
+{"i":"KHI","n":"Jinnah International Airport","la":24.9065,"lo":67.1608,"tg":189400,"tr":5165904,"h":1894,"u":0.01,"co":"#AB85CB"},
+{"i":"MLE","n":"Velana International Airport","la":4.1918,"lo":73.5291,"tg":314000,"tr":4829331,"h":2198,"u":0.007,"co":"#AB85CB"},
+{"i":"TBS","n":"Shota Rustaveli Tbilisi International Airport","la":41.6692,"lo":44.9547,"tg":127000,"tr":4750830,"h":762,"u":0.006,"co":"#AB85CB"},
+{"i":"KTI","n":"Techo International Airport","la":11.3629,"lo":104.9166,"tg":136000,"tr":4746000,"h":816,"u":0.006,"co":"#AB85CB"},
+{"i":"BBI","n":"Biju Patnaik Airport","la":20.2444,"lo":85.8178,"tg":108857,"tr":4600615,"h":762,"u":0.007,"co":"#AB85CB"},
+{"i":"TRV","n":"Thiruvananthapuram International Airport","la":8.4821,"lo":76.9201,"tg":471500,"tr":4405318,"h":943,"u":0.002,"co":"#AB85CB"},
+{"i":"SXR","n":"Srinagar Airport","la":33.9871,"lo":74.7742,"tg":133750,"tr":4205541,"h":1070,"u":0.008,"co":"#AB85CB"},
+{"i":"SAI","n":"Siem Reap-Angkor International Airport","la":13.3753,"lo":104.2208,"tg":51000,"tr":3926000,"h":816,"u":0.016,"co":"#AB85CB"},
+{"i":"ELP","n":"El Paso International Airport","la":31.8072,"lo":-106.378,"tg":239170,"tr":3838968,"h":0,"u":0.0,"co":"#AB85CB"},
+{"i":"DLU","n":"Dali Fengyi Airport","la":25.6494,"lo":100.319,"tg":26071,"tr":3750473,"h":730,"u":0.028,"co":"#BFA2DC"},
+{"i":"LHE","n":"Allama Iqbal International Airport","la":31.5216,"lo":74.4036,"tg":173818,"tr":3695960,"h":1912,"u":0.011,"co":"#AB85CB"},
+{"i":"RGN","n":"Yangon International Airport","la":16.9073,"lo":96.1332,"tg":191200,"tr":3622313,"h":1912,"u":0.01,"co":"#AB85CB"},
+{"i":"BSZ","n":"Manas International Airport","la":43.0613,"lo":74.4776,"tg":57939,"tr":3586337,"h":1912,"u":0.033,"co":"#AB85CB"},
+{"i":"DAM","n":"Damascus International Airport","la":33.4115,"lo":36.5156,"tg":40437,"tr":3281988,"h":0,"u":0.0,"co":"#BFA2DC"},
+{"i":"IXB","n":"Bagdogra Airport","la":26.6812,"lo":88.3286,"tg":171000,"tr":3118368,"h":1026,"u":0.006,"co":"#AB85CB"},
+{"i":"NYT","n":"Nay Pyi Taw International Airport","la":19.6235,"lo":96.201,"tg":41833,"tr":3000000,"h":753,"u":0.018,"co":"#BFA2DC"},
+{"i":"BGW","n":"Baghdad International Airport","la":33.2625,"lo":44.2346,"tg":83789,"tr":2915052,"h":0,"u":0.0,"co":"#AB85CB"},
+{"i":"CJB","n":"Coimbatore International Airport","la":11.03,"lo":77.0434,"tg":69455,"tr":2904611,"h":1528,"u":0.022,"co":"#AB85CB"},
+{"i":"AKU","n":"Akesu Hongqipo Airport","la":41.2625,"lo":80.2917,"tg":45167,"tr":2778946,"h":1084,"u":0.024,"co":"#BFA2DC"},
+{"i":"VTE","n":"Wattay International Airport","la":17.9883,"lo":102.563,"tg":44905,"tr":2477841,"h":943,"u":0.021,"co":"#BFA2DC"},
+{"i":"DYU","n":"Dushanbe International Airport","la":38.5433,"lo":68.825,"tg":33561,"tr":2338000,"h":1376,"u":0.041,"co":"#BFA2DC"},
+{"i":"ABZ","n":"Aberdeen International Airport","la":57.2019,"lo":-2.1978,"tg":24276,"tr":2229918,"h":704,"u":0.029,"co":"#BFA2DC"},
+{"i":"UBN","n":"Chinggis Khaan International Airport","la":47.6469,"lo":106.8197,"tg":104778,"tr":2167270,"h":943,"u":0.009,"co":"#AB85CB"},
+{"i":"KDH","n":"Ahmad Shah Baba International Airport","la":31.5058,"lo":65.8478,"tg":34000,"tr":1982373,"h":816,"u":0.024,"co":"#BFA2DC"},
+{"i":"HTN","n":"Hetian Kungang Airport","la":37.0385,"lo":79.8649,"tg":74444,"tr":1939110,"h":670,"u":0.009,"co":"#AB85CB"},
+{"i":"CEI","n":"Chiang Rai International Airport","la":19.9523,"lo":99.8829,"tg":36545,"tr":1912859,"h":804,"u":0.022,"co":"#BFA2DC"},
+{"i":"CGP","n":"Shah Amanat International Airport","la":22.2496,"lo":91.8133,"tg":30667,"tr":1687523,"h":828,"u":0.027,"co":"#BFA2DC"},
+{"i":"DED","n":"Dehradun Airport","la":30.1897,"lo":78.1803,"tg":72762,"tr":1598297,"h":1528,"u":0.021,"co":"#AB85CB"},
+{"i":"PEW","n":"Bacha Khan International Airport","la":33.9939,"lo":71.5146,"tg":41231,"tr":1578319,"h":536,"u":0.013,"co":"#BFA2DC"},
+{"i":"IXA","n":"Maharaja Bir Bikram Airport","la":23.887,"lo":91.2404,"tg":3563,"tr":1470670,"h":1892,"u":0.531,"co":"#BFA2DC"},
+{"i":"MDL","n":"Mandalay International Airport","la":21.7022,"lo":95.9779,"tg":16511,"tr":1400000,"h":1519,"u":0.092,"co":"#BFA2DC"},
+{"i":"SKD","n":"Samarkand International Airport","la":39.7005,"lo":66.9838,"tg":18169,"tr":1380000,"h":1072,"u":0.059,"co":"#BFA2DC"},
+{"i":"IMF","n":"Bir Tikendrajit International Airport","la":24.76,"lo":93.8967,"tg":17506,"tr":1274666,"h":1488,"u":0.085,"co":"#BFA2DC"},
+{"i":"OSS","n":"Osh International Airport","la":40.609,"lo":72.7933,"tg":10737,"tr":1253914,"h":816,"u":0.076,"co":"#BFA2DC"},
+{"i":"KBL","n":"Kabul International Airport","la":34.5659,"lo":69.2123,"tg":159333,"tr":1237662,"h":1912,"u":0.012,"co":"#AB85CB"},
+{"i":"INN","n":"Innsbruck Airport","la":47.2602,"lo":11.344,"tg":14304,"tr":1144471,"h":329,"u":0.023,"co":"#BFA2DC"},
+{"i":"IXL","n":"Kushok Bakula Rimpochee Airport","la":34.1359,"lo":77.5465,"tg":77857,"tr":1074426,"h":2180,"u":0.028,"co":"#AB85CB"},
+{"i":"LPQ","n":"Luang Prabang International Airport","la":19.8973,"lo":102.161,"tg":14941,"tr":1000000,"h":762,"u":0.051,"co":"#BFA2DC"},
+{"i":"LZY","n":"Nyingchi Mianling Airport","la":29.3033,"lo":94.3353,"tg":19429,"tr":967829,"h":1768,"u":0.091,"co":"#BFA2DC"},
+{"i":"RVN","n":"Rovaniemi Airport","la":66.5648,"lo":25.8304,"tg":15000,"tr":948151,"h":330,"u":0.022,"co":"#BFA2DC"},
+{"i":"INV","n":"Inverness Airport","la":57.5425,"lo":-4.0475,"tg":8482,"tr":802338,"h":704,"u":0.083,"co":"#BFA2DC"},
+{"i":"DIB","n":"Dibrugarh Airport","la":27.4839,"lo":95.0169,"tg":2016,"tr":745876,"h":2016,"u":1.0,"co":"#BFA2DC"},
+{"i":"ZYL","n":"Osmani International Airport","la":24.9632,"lo":91.8668,"tg":876,"tr":634031,"h":876,"u":1.0,"co":"#BFA2DC"},
+{"i":"BHK","n":"Bukhara International Airport","la":39.775,"lo":64.4833,"tg":20815,"tr":525000,"h":562,"u":0.027,"co":"#BFA2DC"},
+{"i":"BPX","n":"Changdu Bamda Airport","la":30.5536,"lo":97.1083,"tg":2773,"tr":468926,"h":768,"u":0.277,"co":"#BFA2DC"},
+{"i":"DIG","n":"Diqing Shangri-La Airport","la":27.7936,"lo":99.6772,"tg":6718,"tr":428318,"h":1048,"u":0.156,"co":"#BFA2DC"},
+{"i":"IXS","n":"Silchar Airport","la":24.9129,"lo":92.9787,"tg":1048,"tr":412654,"h":1048,"u":1.0,"co":"#BFA2DC"},
+{"i":"YUS","n":"Yushu Batang Airport","la":32.8364,"lo":97.0364,"tg":4037,"tr":405531,"h":884,"u":0.219,"co":"#BFA2DC"},
+{"i":"ROR","n":"Roman Tmetuchl International Airport","la":7.3673,"lo":134.5442,"tg":6833,"tr":404695,"h":328,"u":0.048,"co":"#BFA2DC"},
+{"i":"AJL","n":"Lengpui Airport","la":23.8406,"lo":92.6197,"tg":1488,"tr":398667,"h":1488,"u":1.0,"co":"#BFA2DC"},
+{"i":"FAE","n":"Vagar Airport","la":62.0636,"lo":-7.2772,"tg":60727,"tr":377813,"h":668,"u":0.011,"co":"#AB85CB"},
+{"i":"GOQ","n":"Golmud Airport","la":36.4006,"lo":94.7861,"tg":604,"tr":362343,"h":604,"u":1.0,"co":"#BFA2DC"},
+{"i":"DMU","n":"Dimapur Airport","la":25.8839,"lo":93.7711,"tg":1048,"tr":319590,"h":1048,"u":1.0,"co":"#BFA2DC"},
+{"i":"BWA","n":"Gautam Buddha Airport","la":27.5057,"lo":83.4163,"tg":4454,"tr":245000,"h":775,"u":0.174,"co":"#BFA2DC"},
+{"i":"NGQ","n":"Ali Kunsha Airport","la":32.1,"lo":80.0531,"tg":1764,"tr":191746,"h":1764,"u":1.0,"co":"#BFA2DC"},
+{"i":"PBH","n":"Paro International Airport","la":27.4032,"lo":89.4246,"tg":77738,"tr":181659,"h":4742,"u":0.061,"co":"#AB85CB"},
+{"i":"JRH","n":"Jorhat Airport","la":26.7315,"lo":94.1755,"tg":1048,"tr":168468,"h":1048,"u":1.0,"co":"#BFA2DC"},
+{"i":"PHH","n":"Pokhara International Airport","la":28.2002,"lo":83.9826,"tg":360,"tr":164213,"h":360,"u":1.0,"co":"#BFA2DC"},
+{"i":"SHL","n":"Shillong Airport","la":25.7036,"lo":91.9787,"tg":704,"tr":154658,"h":704,"u":1.0,"co":"#BFA2DC"},
+{"i":"LYR","n":"Svalbard Airport","la":78.2461,"lo":15.4656,"tg":15650,"tr":154261,"h":313,"u":0.02,"co":"#BFA2DC"},
+{"i":"HGI","n":"Donyi Polo Airport Itanagar","la":26.97,"lo":93.6647,"tg":1648,"tr":147790,"h":1648,"u":1.0,"co":"#BFA2DC"},
+{"i":"KDU","n":"Skardu International Airport","la":35.3355,"lo":75.536,"tg":2180,"tr":127124,"h":2180,"u":1.0,"co":"#BFA2DC"},
+{"i":"RKZ","n":"Rikaze Peace Airport","la":29.3519,"lo":89.3114,"tg":450,"tr":125883,"h":450,"u":1.0,"co":"#BFA2DC"},
+{"i":"MYT","n":"Myitkyina Airport","la":25.3836,"lo":97.3519,"tg":508,"tr":125000,"h":508,"u":1.0,"co":"#BFA2DC"},
+{"i":"NMA","n":"Namangan Airport","la":40.9846,"lo":71.5567,"tg":15352,"tr":100000,"h":1090,"u":0.071,"co":"#BFA2DC"},
+{"i":"DCY","n":"Daocheng Yading Airport","la":29.3231,"lo":100.0533,"tg":4589,"tr":89635,"h":1005,"u":0.219,"co":"#BFA2DC"},
+{"i":"GZG","n":"Garze Gesar Airport","la":31.6492,"lo":99.8228,"tg":3014,"tr":53896,"h":633,"u":0.21,"co":"#BFA2DC"},
+{"i":"CXB","n":"Cox's Bazar Airport","la":21.4522,"lo":91.9639,"tg":2216,"tr":48719,"h":780,"u":0.352,"co":"#BFA2DC"},
+{"i":"FNJ","n":"Pyongyang International Airport","la":39.2241,"lo":125.67,"tg":9720,"tr":46123,"h":797,"u":0.082,"co":"#BFA2DC"},
+{"i":"IXI","n":"Lilabari Airport","la":27.2955,"lo":94.0976,"tg":414,"tr":36172,"h":414,"u":1.0,"co":"#BFA2DC"},
+{"i":"IKU","n":"Issyk-Kul International Airport","la":42.5879,"lo":76.713,"tg":651,"tr":33251,"h":651,"u":1.0,"co":"#BFA2DC"},
+{"i":"TEZ","n":"Tezpur Airport","la":26.7091,"lo":92.7847,"tg":856,"tr":32273,"h":856,"u":1.0,"co":"#BFA2DC"},
+{"i":"NUM","n":"Neom Airport","la":27.9586,"lo":35.3209,"tg":340,"tr":25000,"h":340,"u":1.0,"co":"#BFA2DC"},
+{"i":"TJU","n":"Kulob Airport","la":37.9881,"lo":69.805,"tg":375,"tr":21442,"h":375,"u":1.0,"co":"#BFA2DC"},
+{"i":"HQL","n":"Tashkurgan Khunjerab Airport","la":37.9683,"lo":75.1933,"tg":487,"tr":16209,"h":487,"u":1.0,"co":"#BFA2DC"},
+{"i":"AKY","n":"Sittwe Airport","la":20.1327,"lo":92.8726,"tg":513,"tr":14500,"h":513,"u":1.0,"co":"#BFA2DC"}
 ];
 
-const N=AP.length;
+const N = AP.length;
 
+// ── Distances (computed once) ─────────────────────────────────────
 function haversineNm(la1,lo1,la2,lo2){
   const R=3440.065,p=Math.PI/180;
   const dLa=(la2-la1)*p,dLo=(lo2-lo1)*p;
   const a=Math.sin(dLa/2)**2+Math.cos(la1*p)*Math.cos(la2*p)*Math.sin(dLo/2)**2;
   return 2*R*Math.asin(Math.sqrt(a));
 }
-
 const DIST=new Float64Array(N*N);
 for(let i=0;i<N;i++)
   for(let j=0;j<N;j++)
     DIST[i*N+j]=i===j?0:Math.max(haversineNm(AP[i].la,AP[i].lo,AP[j].la,AP[j].lo),50);
 
-const SO=AP.map(a=>Math.pow(a.t,ALPHA_O));
-const SD=AP.map(a=>Math.pow(a.t,ALPHA_D));
-
-function computePi(k){
-  const P=new Float64Array(N*N);
+// ── Core model ────────────────────────────────────────────────────
+function computePi(k, mode){
+  const m = MODELS[mode];
+  const size = AP.map(a => mode==='game' ? a.tg : a.tr);
+  const SO = size.map(s => Math.pow(s, m.AO));
+  const SD = size.map(s => Math.pow(s, m.AD));
+  const P = new Float64Array(N*N);
   for(let i=0;i<N;i++){
     let s=0;
     for(let j=0;j<N;j++){
-      if(i===j)continue;
-      const v=k===0?C*SO[i]*SD[j]:C*SO[i]*SD[j]/Math.pow(DIST[i*N+j],k);
+      if(i===j) continue;
+      const v = k===0 ? m.C*SO[i]*SD[j] : m.C*SO[i]*SD[j]/Math.pow(DIST[i*N+j],k);
       P[i*N+j]=v; s+=v;
     }
     for(let j=0;j<N;j++) P[i*N+j]/=s;
@@ -287,7 +308,7 @@ function computePi(k){
     const pn=new Float64Array(N);
     for(let i=0;i<N;i++) for(let j=0;j<N;j++) pn[j]+=pi[i]*P[i*N+j];
     let d=0; for(let i=0;i<N;i++) d+=Math.abs(pn[i]-pi[i]);
-    pi=pn; if(d<1e-11)break;
+    pi=pn; if(d<1e-11) break;
   }
   return pi;
 }
@@ -304,13 +325,15 @@ function dotRadius(rank){
   return MIN_R+Math.sqrt((N-rank)/(N-1))*(MAX_R-MIN_R);
 }
 
+// ── State ─────────────────────────────────────────────────────────
 let currentK=1.0;
-let currentPi=computePi(currentK);
+let currentPi=computePi(currentK,currentMode);
 let currentRanks=getRanks(currentPi);
 let selectedIdx=null;
 let circles=[];
 let debounceTimer=null;
 
+// ── Map ───────────────────────────────────────────────────────────
 const map=L.map('map',{center:[28,80],zoom:4});
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
   attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
@@ -333,14 +356,18 @@ function drawDots(pi,ranks){
 
 function showInfo(idx,pi,ranks,k){
   const ap=AP[idx];
+  const mLabel=MODELS[currentMode].label;
+  const sizeVal=currentMode==='game'
+    ? ap.tg.toLocaleString()+' pax/wk'
+    : ap.tr.toLocaleString()+' pax/yr';
   document.getElementById('info').innerHTML=
     `<strong>${ap.i} &mdash; ${ap.n.length>34?ap.n.slice(0,34)+'&hellip;':ap.n}</strong>`+
     `<div class="sr"><span style="color:#666">Centrality rank</span><span class="sv hi">#${ranks[idx]}/129</span></div>`+
     `<div class="sr"><span style="color:#666">Centrality score</span><span class="sv">${(pi[idx]*100).toFixed(3)}%</span></div>`+
-    `<div class="sr"><span style="color:#666">Total pax/week</span><span class="sv">${ap.t.toLocaleString()}</span></div>`+
+    `<div class="sr"><span style="color:#666">${mLabel}</span><span class="sv">${sizeVal}</span></div>`+
     `<div class="sr"><span style="color:#666">H3 weekly pax</span><span class="sv">${ap.h.toLocaleString()}</span></div>`+
     `<div class="sr"><span style="color:#666">H3 market share</span><span class="sv">${(ap.u*100).toFixed(1)}%</span></div>`+
-    `<div style="margin-top:6px;font-size:10px;color:#444">Live at k = ${k.toFixed(2)}</div>`;
+    `<div style="margin-top:6px;font-size:10px;color:#444">Live at k = ${k.toFixed(2)} &bull; ${currentMode==='game'?'In-game':'Real-world'} model</div>`;
   highlightLists();
 }
 
@@ -350,6 +377,38 @@ function getDesc(k){
   return KV_DESCS[near]||'';
 }
 
+function recompute(){
+  document.getElementById('k-status').textContent='computing...';
+  currentPi=computePi(currentK,currentMode);
+  currentRanks=getRanks(currentPi);
+  drawDots(currentPi,currentRanks);
+  buildCentralityList(currentPi,currentRanks);
+  if(selectedIdx!==null) showInfo(selectedIdx,currentPi,currentRanks,currentK);
+  document.getElementById('k-status').textContent='';
+}
+
+// ── Mode toggle ───────────────────────────────────────────────────
+document.querySelectorAll('.mode-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode=btn.dataset.mode;
+    document.getElementById('mode-label').innerHTML=MODELS[currentMode].params;
+    recompute();
+  });
+});
+
+// ── k slider ──────────────────────────────────────────────────────
+document.getElementById('ksl').addEventListener('input',function(){
+  currentK=parseFloat(this.value);
+  document.getElementById('k-num').textContent=`k = ${currentK.toFixed(2)}`;
+  document.getElementById('k-desc').textContent=getDesc(currentK);
+  document.getElementById('k-status').textContent='computing...';
+  clearTimeout(debounceTimer);
+  debounceTimer=setTimeout(recompute,120);
+});
+
+// ── Right panel ───────────────────────────────────────────────────
 function buildCentralityList(pi,ranks){
   const sorted=[...Array(N).keys()].sort((a,b)=>ranks[a]-ranks[b]);
   const el=document.getElementById('tab-centrality');
@@ -371,16 +430,15 @@ function buildCentralityList(pi,ranks){
 }
 
 function buildSizeList(){
-  const sorted=[...AP.keys()].sort((a,b)=>AP[b].t-AP[a].t);
-  const el=document.getElementById('tab-size');
-  el.innerHTML=sorted.map((idx,i)=>
+  const sorted=[...Array(N).keys()].sort((a,b)=>AP[b].tg-AP[a].tg);
+  document.getElementById('tab-size').innerHTML=sorted.map((idx,i)=>
     `<div class="list-item" data-idx="${idx}">
       <span class="list-rank">${i+1}</span>
       <span class="list-iata">${AP[idx].i}</span>
       <span class="list-name">${AP[idx].n}</span>
-      <span class="list-val">${AP[idx].t>=1000000?(AP[idx].t/1000000).toFixed(1)+'M':(AP[idx].t/1000).toFixed(0)+'k'}</span>
+      <span class="list-val">${AP[idx].tg>=1000000?(AP[idx].tg/1000000).toFixed(1)+'M':(AP[idx].tg/1000).toFixed(0)+'k'}</span>
     </div>`).join('');
-  el.querySelectorAll('.list-item').forEach(row=>{
+  document.querySelectorAll('#tab-size .list-item').forEach(row=>{
     row.addEventListener('click',()=>{
       selectedIdx=parseInt(row.dataset.idx);
       showInfo(selectedIdx,currentPi,currentRanks,currentK);
@@ -412,23 +470,7 @@ document.getElementById('rpanel-toggle').addEventListener('click',()=>{
   btn.innerHTML=p.classList.contains('collapsed')?'&#8249;':'&#8250;';
 });
 
-const slider=document.getElementById('ksl');
-slider.addEventListener('input',()=>{
-  currentK=parseFloat(slider.value);
-  document.getElementById('k-num').textContent=`k = ${currentK.toFixed(2)}`;
-  document.getElementById('k-desc').textContent=getDesc(currentK);
-  document.getElementById('k-status').textContent='computing...';
-  clearTimeout(debounceTimer);
-  debounceTimer=setTimeout(()=>{
-    currentPi=computePi(currentK);
-    currentRanks=getRanks(currentPi);
-    drawDots(currentPi,currentRanks);
-    buildCentralityList(currentPi,currentRanks);
-    if(selectedIdx!==null) showInfo(selectedIdx,currentPi,currentRanks,currentK);
-    document.getElementById('k-status').textContent='';
-  },120);
-});
-
+// ── Init ──────────────────────────────────────────────────────────
 buildSizeList();
 buildCentralityList(currentPi,currentRanks);
 drawDots(currentPi,currentRanks);

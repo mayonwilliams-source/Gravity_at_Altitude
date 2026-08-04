@@ -1,0 +1,73 @@
+## The interactive tool
+
+Open `docs/index.html` in any browser, or visit the live GitHub Pages link above.
+
+- **Size metric toggle**: switch between in-game (player-generated) and real-world
+  passenger volume as the model's size variable.
+- **Distance decay slider ($k$)**: continuously adjustable from 0 to 1.5. The gravity
+  model and Markov chain steady-state are recomputed live in the browser at every value
+  — nothing is pre-baked to a fixed set of $k$ values.
+- **Centrality / Size panel**: ranked, scrollable lists of all 129 airports, updating
+  live with the slider and toggle.
+- Click any airport marker (or list row) to see its centrality rank, centrality score,
+  passenger volume, and H3 market share.
+
+No build step, no dependencies — it's a single self-contained HTML file.
+
+## Running the analysis pipeline
+
+```bash
+cd analysis
+pip install -r requirements.txt
+python centralityPipeline.py
+```
+
+This reproduces the full pipeline described in the paper: loading the calibration and
+airport data, computing the Haversine distance matrix, building the gravity-model
+transition matrix, solving for the steady-state distribution via power iteration, and
+running the sensitivity analysis across $k$.
+
+## A note on data collection
+
+All calibration figures were collected using AEn's in-game Route Research tool with
+**route awareness, class reputation, and ticket price held at their default/100%
+values** across every observation, so that the resulting "maximum capturable passenger
+load" figures are directly comparable across routes. If you extend this dataset, keep
+these settings standardized or your new observations won't be comparable to the
+existing 60.
+
+## Using this for your own airline
+
+The framework is airline-agnostic — swap in your own airline's destination list,
+coordinates, and a fresh calibration sample, and the same pipeline and tool will produce
+a centrality ranking for your network. `data/H3_data_collection_template.xlsx` is set up
+to make this straightforward: replace the airport list and re-collect the two data
+columns (weekly pax + market share, and ~60 calibration routes), then re-run the
+regression (JMP or any statistics package) to get new $C$, $\alpha_o$, $\alpha_d$
+estimates, and update the constants at the top of `docs/index.html`.
+
+## Citation
+
+If you use or build on this work, please cite:
+
+```bibtex
+@misc{gravity_at_altitude_repo,
+  author       = {Williams, Mayon},
+  title        = {Gravity at Altitude: Code, Data, and Interactive Tool},
+  howpublished = {\url{https://github.com/mayonwilliams-source/Gravity_at_Altitude}},
+  year         = {2026},
+  note         = {Accessed August 2026}
+}
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE). Contributions, forks, and adaptations for other airlines
+or games are welcome.
+
+## Acknowledgments
+
+Thanks to the *Airline Enterprise* development team for maintaining a richly detailed
+simulation and making airport and route data accessible in-game. Airport coordinate data
+sourced from [OpenFlights](https://openflights.org/data.html). The interactive tool and some parts of the code were developed with the
+assistance of Claude (Anthropic).

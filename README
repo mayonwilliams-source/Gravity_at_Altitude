@@ -36,6 +36,8 @@ load" figures are directly comparable across routes. If you extend this dataset,
 these settings standardized or your new observations won't be comparable to the
 existing 60.
 
+The tables and associated scripts in the folder 'JMP Tables and Scripts' were also used to carry out part of the analysis in this project. 
+
 ## Using this for your own airline
 
 The framework is airline-agnostic — swap in your own airline's destination list,
